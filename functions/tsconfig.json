@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "module": "esnext",
+    "noImplicitAny": true,
+    "removeComments": true,
+    "preserveConstEnums": true,
+    "sourceMap": true,
+    "target": "ES2020",
+    "rootDir": "./src",
+    "outDir": "./lib",
+    "lib": ["ES2020"]
+  },
+  "compileOnSave": true,
+  "include": [
+    "src"
+  ]
+}

@@ -1,0 +1,78 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper function to check if user is admin
+    function isAdmin() {
+      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Helper function to check if user is admin by UID
+    function isAdminUid(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data.role == 'admin';
+    }
+
+    // Helper function to get current user UID
+    function getCurrentUid() {
+      return request.auth.uid;
+    }
+
+    // ============== USERS COLLECTION ==============
+    match /users/{userId} {
+      
+      // Allow users to read their own profile (only if active/not deleted)
+      allow read: if isAuthenticated() && request.auth.uid == userId && 
+                     (!('deletedAt' in resource.data) || resource.data.deletedAt == null);
+      
+      // Allow admin to read all users (including deleted)
+      allow read: if isAdmin();
+      
+      // Allow creating own profile during registration (uid matches auth uid)
+      // OR allow admin to create any user profile
+      allow create: if (request.auth.uid == userId && 
+                       request.resource.data.uid == userId &&
+                       request.resource.data.email == request.auth.token.email &&
+                       request.resource.data.get('role', 'operator') in ['admin', 'operator'] &&
+                       request.resource.data.keys().hasAll(['email', 'role', 'isActive', 'createdAt', 'updatedAt']))
+                    || (isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+                       get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' && 
+                       request.resource.data.get('role', 'operator') in ['admin', 'operator'] &&
+                       request.resource.data.keys().hasAll(['uid', 'email', 'role', 'isActive', 'createdAt', 'updatedAt']));
+      
+      // Allow users to update their own profile (except role and isActive)
+      allow update: if isAuthenticated() && request.auth.uid == userId &&
+                       !request.resource.data.diff(resource.data).affectedKeys().hasAny(['uid', 'email', 'role', 'isActive', 'createdAt']);
+      
+      // Allow admin to update any user profile
+      allow update: if isAdmin() && 
+                       request.resource.data.uid == resource.data.uid &&
+                       request.resource.data.email == resource.data.email &&
+                       request.resource.data.createdAt == resource.data.createdAt;
+      
+      // Allow admin to delete users (mark as deleted)
+      allow delete: if isAdmin();
+      
+      // Allow admin to mark user as deleted by updating deletedAt field
+      allow update: if isAdmin() && 
+                       request.resource.data.uid == resource.data.uid &&
+                       request.resource.data.email == resource.data.email &&
+                       request.resource.data.createdAt == resource.data.createdAt &&
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deletedAt', 'updatedAt', 'isActive']);
+      
+      // Allow listing users for admin only
+      allow list: if isAdmin();
+    }
+
+    // ============== DENY ALL OTHER COLLECTIONS ==============
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
